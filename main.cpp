@@ -50,8 +50,8 @@ int main() {
     string cur = "";
     for (size_t i = 0; i < size; i++) {
       cur = "";
-      while (DATA[i] != '\n' && i < size) {
-        cur.push_back(DATA[i]);
+      while (Get(i) != '\n' && i < size) {
+        cur.push_back(Get(i));
         i++;
       }
       if (cur >= pre) {
@@ -67,7 +67,7 @@ int main() {
   ofstream out;
   out.open(filename);
   for (size_t i = 0; i < size; i++) {
-    out << DATA[i].load();
+    out << Get(i);
   }
   out.flush();
   out.close();

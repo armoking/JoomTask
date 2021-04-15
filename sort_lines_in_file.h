@@ -239,7 +239,6 @@ void RelaxDown(size_t v, size_t n, size_t max_length) {
 /*
  Main function of HeapSort
  */
-bool good = true;
 void HeapSort(size_t left, size_t right, size_t max_length) {
   for (size_t index = left + 1; index <= right; ++index) {
     RelaxUp(left, index, max_length);
@@ -323,7 +322,6 @@ void TimSort(size_t left, size_t right, size_t max_length, size_t depth = 0) {
       TimSort(mid + 1, right, max_length, depth + 1);
     }
   #endif
-
 }
 
 
