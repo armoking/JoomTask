@@ -3,14 +3,18 @@
 #include <random>
 #include <cstring>
 #include <tuple> 
-#include<thread>
+#include <thread>
+#include <atomic>
 
 // CONSTANTS
-const size_t MAX_DEPTH_CONSTANT = 256;
+const size_t MAX_DEPTH_CONSTANT = 25;
 const size_t MAX_SIZE = 1e9;
 
 // GLOBAL VALUES
-char DATA[MAX_SIZE];
+static std::atomic<char> DATA[MAX_SIZE];
+static std::atomic<int> thread_counter{0};
+static const int MAX_THREADS = 32;
+
 
 // DATA immitates file, it is all because I use Windows (b.o. my university)
 // this OS gives '\r' besides '\n' at ends of lines, so it really cannot be read good from the files without
@@ -25,11 +29,6 @@ char Get(size_t index) {
 }
 
 void Set(size_t index, char ch) {
-  if (index > MAX_SIZE) {
-    std::cout << "Need more memory" << std::endl; // Increase MAX_SIZE if its needed
-    exit(0);
-  }
-  
   DATA[index] = ch;
 }
 
@@ -42,7 +41,6 @@ char Get(size_t index, FILE* file) {
   char ch = fgetc(file);
   return ch;
 }
-
 void Set(size_t index, char ch, FILE* file) {
   rewind(file);
   fseek(file, index, SEEK_SET);
@@ -203,8 +201,8 @@ size_t RemoveAllZeros(size_t length) {
  */
 void RelaxUp(size_t root, size_t v, size_t max_length) {
   v -= root;
-  while (v > 0) {
-    size_t parent = (v - 1) >> 1;
+  while (v != 0) {
+    size_t parent = (v - 1) / 2;
     if (CompareLines((parent + root) * max_length, (v + root) * max_length, max_length)) {
       SwapLines((parent + root) * max_length, (v + root) * max_length, max_length);
       v = parent;
@@ -219,27 +217,18 @@ void RelaxUp(size_t root, size_t v, size_t max_length) {
  Function for HeapSort
  */
 void RelaxDown(size_t v, size_t n, size_t max_length) {
-  size_t left, right;
-  while (true) {
-    left = (v << 1) + 1;
-    right = (v << 1) + 2;
-    if (right < n) {
-      if (CompareLines(left * max_length, right * max_length, max_length)) {
-        std::swap(left, right);
-      }
-      if (CompareLines(v * max_length, left * max_length, max_length)) {
-        SwapLines(v * max_length, left * max_length, max_length);
-        v = left;
-      } else {
-        break;
-      }
-    } else if (left < n) {
-      if (CompareLines(v * max_length, left * max_length, max_length)) {
-        SwapLines(v * max_length, left * max_length, max_length);
-        v = left;
-      } else {
-        break;
-      }
+  size_t delta = v;
+  n -= v;
+  v = 0;
+  while (v * 2 + 1 < n) {
+    size_t left = v * 2 + 1;
+    size_t right = v * 2 + 2;
+    if (v * 2 + 2 < n && CompareLines((left + delta) * max_length, (right + delta) * max_length, max_length)) {
+      left = right;
+    }     
+    if (CompareLines((v + delta) * max_length, (left + delta) * max_length, max_length)) {
+      SwapLines((v + delta) * max_length, (left + delta) * max_length, max_length);
+      v = left;
     } else {
       break;
     }
@@ -250,13 +239,15 @@ void RelaxDown(size_t v, size_t n, size_t max_length) {
 /*
  Main function of HeapSort
  */
+bool good = true;
 void HeapSort(size_t left, size_t right, size_t max_length) {
   for (size_t index = left + 1; index <= right; ++index) {
     RelaxUp(left, index, max_length);
   }
+
   for (size_t index = right; index > left; --index) {
     SwapLines(left * max_length, index * max_length, max_length);
-    RelaxDown(left, index - 1, max_length);
+    RelaxDown(left, index, max_length);
   }
 }
 
@@ -276,7 +267,7 @@ void TimSort(size_t left, size_t right, size_t max_length, size_t depth = 0) {
     return;
   }
   
-  size_t mid = (left + right) / 2; // Can be selected randomly
+  size_t mid = left + (right - left) / 2; // Can be selected randomly
   
   size_t lower = left;
   for (size_t index = left; index <= right; index++) {
@@ -297,15 +288,42 @@ void TimSort(size_t left, size_t right, size_t max_length, size_t depth = 0) {
     }
   }
   
-  if (mid > 0) {
-    std::thread thread1(TimSort, left, mid - 1, max_length, depth + 1);
-    std::thread thread2(TimSort, mid + 1, right, max_length, depth + 1);
-    thread1.join();
-    thread2.join();
-  } else {
-    std::thread thread1(TimSort, mid + 1, right, max_length, depth + 1);
-    thread1.join();
-  }
+  #if THREADS
+    if (mid > 0) {
+      if (thread_counter.load() < MAX_THREADS - 2) {
+        thread_counter.fetch_add(2);
+        
+        std::thread thread1(TimSort, left, mid - 1, max_length, depth + 1);
+        std::thread thread2(TimSort, mid + 1, right, max_length, depth + 1);
+        
+        thread1.join();
+        thread2.join();
+        
+        thread_counter.fetch_add(-2);
+      } else if (thread_counter.load() < MAX_THREADS - 1) {
+        thread_counter.fetch_add(1);
+        
+        std::thread thread(TimSort, left, mid - 1, max_length, depth + 1);
+        TimSort(mid + 1, right, max_length, depth + 1);
+      
+        thread.join();
+        thread_counter.fetch_add(-1);
+      } else {
+        TimSort(left, mid - 1, max_length, depth + 1);
+        TimSort(mid + 1, right, max_length, depth + 1);
+      }
+    } else {
+      TimSort(mid + 1, right, max_length, depth + 1);
+    }
+  #else
+    if (mid > 0) {
+      TimSort(left, mid - 1, max_length, depth + 1);
+      TimSort(mid + 1, right, max_length, depth + 1);
+    } else {
+      TimSort(mid + 1, right, max_length, depth + 1);
+    }
+  #endif
+
 }
 
 
